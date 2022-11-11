@@ -9,36 +9,62 @@ import os
 from aqt import gui_hooks
 from aqt.webview import AnkiWebView
 from aqt import mw;
+from datetime import datetime,timedelta,date
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import QMessageBox
 
 
 
 
 def myfunc2(web: AnkiWebView):
-    f = open('interval_log.csv', 'r')
-    print(f.read())
-    interval1, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 3 AND ivl <= 7;
-    """)
-    interval2, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 7 AND ivl <= 15;
-    """)
-    interval3, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 15 AND ivl <= 30;
-    """)
-    interval4, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 30 AND ivl <= 60;
-    """)
-    interval5, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 60 AND ivl <= 120;
-    """)
-    interval6, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 120;
-    """)
-
-
     page = os.path.basename(web.page().url().path())
     if page != "graphs.html":
         return
+    mw.col.db.execute("""
+    CREATE TABLE IF NOT EXISTS betterProgress (
+        day INTEGER PRIMARY KEY,
+        interval1 INTEGER ,
+        interval2 INTEGER ,
+        interval3 INTEGER ,
+        interval4 INTEGER ,
+        interval5 INTEGER ,
+        interval6 INTEGER ,
+        interval7 INTEGER
+    );
+    """)
+    lastEntryDate = mw.col.db.execute("""
+        SELECT MAX(day) FROM betterProgress
+    """)
+    tomorrowDate = date.today() - timedelta(days=-1)
+    tomorrowDateInMS = unix_time_millis(datetime.datetime.combine(tomorrowDate, datetime.datetime.min.time()))
+    numberOfDaysToUpdate = 0
+    replace = 0
+    firstReviewDate = mw.col.db.execute(""" 
+    SELECT MIN(id) FROM revlog
+    """)
+    
+    daysSinceFirstReview = (tomorrowDateInMS - firstReviewDate[0][0]) / 86400000 
+
+    if(lastEntryDate[0][0] is None):
+        numberOfDaysToUpdate = daysSinceFirstReview + 1
+
+    elif(tomorrowDateInMS > lastEntryDate[0][0]):
+        numberOfDaysToUpdate = (tomorrowDateInMS - lastEntryDate[0][0]) / 86400000 
+
+    elif(tomorrowDateInMS == lastEntryDate[0][0]):
+        #replace last entry
+        replace = 1 
+
+    if(replace == 0):
+        generateData(numberOfDaysToUpdate)
+    else:
+        replaceLastEntry(lastEntryDate[0][0])
+
+        
+
+   
+    
     web.eval(
         """
     /*!
@@ -59,6 +85,10 @@ div.innerHTML = `
 <canvas id="myChart" width="400" height="400"></canvas>
 <form name="betterProgressForm">
  <fieldset style = "text-align: center; padding-top: 10px;"> 
+    <label>
+    <input type="radio" value="All" name = "selectRange" id="BetterProgressAllDays"> All
+    </label>
+    <label>
     <input type="radio" value="1Year" name = "selectRange" id="BetterProgress1Year"> 1 Year
     </label>
     <label>
@@ -91,7 +121,6 @@ div.innerHTML = `
     }
     function createData(datacount, numberOfDays)
     {
-        """ + updateData() + """
         return {
         labels: createLabels(datacount),
         datasets: [
@@ -99,51 +128,45 @@ div.innerHTML = `
             {
             barPercentage: 1.2,
             label: '>120 days',
-            data: getIntervals(6, datacount),
+            data: getIntervals(7, datacount),
             backgroundColor: "rgba(255, 192, 43,1)",
             },
             {
             barPercentage: 1.2,
             label: '>60 days',
-            data: getIntervals(5, datacount),
+            data: getIntervals(6, datacount),
             backgroundColor: "rgba(181, 130, 11,1",
             },
             {
             barPercentage: 1.2,
             label: '>30 days',
-            data: getIntervals(4, datacount),
+            data: getIntervals(5, datacount),
             backgroundColor: "rgba(122, 202, 255,1)",
             },
             {
             barPercentage: 1.2,
             label: '>15 days',
-            data: getIntervals(3, datacount),
+            data: getIntervals(4, datacount),
             backgroundColor: "rgba(51, 119, 196,1)",
             },
             {
             barPercentage: 1.2,
             label: '>7 days',
-            data: getIntervals(2, datacount),
+            data: getIntervals(3, datacount),
             backgroundColor: "rgba(207, 207, 207,1)",
             },
             {
             barPercentage: 1.2,
             label: '>3 days',
-            data: getIntervals(1, datacount),
+            data: getIntervals(2, datacount),
             backgroundColor: "rgba(125, 125, 125,1)",
             },
             {
             barPercentage: 1.2,
             label: '>1 day',
-            data: getIntervals(0, datacount),
+            data: getIntervals(1, datacount),
             backgroundColor: "rgba(80, 80, 80,1)",
-            },
-            {
-            barPercentage: 1.2,
-            label: 'New',
-            data: getIntervals(7, datacount),
-            backgroundColor: "rgba(123, 123, 123,.1)",
-            },
+            }
 
 
             ]
@@ -152,7 +175,7 @@ div.innerHTML = `
 
     const myChart = new Chart(ctx, {
         type: 'bar',
-        data: createData(8),
+        data: createData(7),
         options: {
             barPercentage: 1,
 
@@ -168,143 +191,319 @@ div.innerHTML = `
                     stacked: true,
                 },
                 y: {
-                    stacked: true
+                    stacked: true,
+                    max: """ + str(round(getNumberOfCards()[0][0],0)) + """
                 }
+                
             }
+
         }
     });
     var rad = document.betterProgressForm.selectRange;
     rad[0].addEventListener('click', function (event) {
+        myChart.data = createData( """ +
+        str(int(daysSinceFirstReview))
+        + """);
+    myChart.update();   
+    });
+    rad[1].addEventListener('click', function (event) {
+        console.log('event triggered 1')
         myChart.data = createData(365);
         myChart.update();   
     });
-    rad[1].addEventListener('click', function (event) {
+    rad[2].addEventListener('click', function (event) {
+        console.log('event triggered 2')
         myChart.data = createData(90);
         myChart.update();   
     });
-    rad[2].addEventListener('click', function (event) {
+    rad[3].addEventListener('click', function (event) {
+        console.log('event triggered 3')
         myChart.data = createData(7);
         myChart.update();   
     });
+
     
 
-    function getIntervals(interval ,numberOfDays)
+    function getIntervals(interval, numberOfDays)
     {
-        rows = """ + str(getRows()) + """;
-        intervals = [];
-        for (let x = rows.length - numberOfDays; x < rows.length; x++)
+        if(numberOfDays == 7)
         {
-        if(x < 0)
-            intervals.push(0)
-        else
-            intervals.push(rows[x][interval])
-
+            data = """ + str(getDataFor7Days()) + """;
         }
-         
+        else if(numberOfDays == 90)
+        {
+            data = """ + str(getDataFor90Days()) + """;
+        }
+        else if(numberOfDays == 365)
+        {
+            data = """ + str(getDataFor365Days()) + """;
+        }
+        else
+        {
+            data = """ + str(getDataForAllDays()) + """;
+        }
+
+        intervals = [];
+        for (let x = 0; x < data.length; x++)
+        {
+            intervals.push(data[x][interval])
+        }
         return intervals
     }
 """
             )
             
-def getRows():
-    import csv
-    intervals = []
-    with open('interval_log.csv') as interval_log:
-        csv_reader = csv.reader(interval_log)
-        return list(csv_reader)
-
-def updateData():
-    from datetime import datetime,timedelta,date
-    import csv
-    with open('interval_log.csv') as interval_log:
-        csv_reader = csv.reader(interval_log)
-        collection = list(csv_reader)
-        LastEntry = collection[len(collection)-1]
-        dateOfLastEntry = LastEntry[8]
-        if(datetime.strptime(str(dateOfLastEntry), "%Y-%m-%d").date() != date.today()):
-            with open('interval_log.csv', 'a', newline='') as interval_log:
-                employee_writer = csv.writer(interval_log)
-                delta = date.today() - datetime.strptime(str(dateOfLastEntry), "%Y-%m-%d").date()                
-                for x in range(delta.days):
-                    if(x == delta.days-1) :
-                        saveCurrentIntervals(interval_log)
-                        break
-                    LastEntry[len(LastEntry)-1] = (datetime.strptime(str(dateOfLastEntry), "%Y-%m-%d") + timedelta(days=1)).date()
-                    print(LastEntry)
-                    employee_writer.writerow([
-                    LastEntry[0],
-                    LastEntry[1],
-                    LastEntry[2],
-                    LastEntry[3],
-                    LastEntry[4],
-                    LastEntry[5],
-                    LastEntry[6],
-                    LastEntry[7],
-                    LastEntry[8],
-
-                    ])
-                    dateOfLastEntry = collection[len(collection)-1][7]
-                    if (dateOfLastEntry == date.today):
-                        break
-        else:
-            collection.pop()
-            with open('interval_log.csv', 'w', newline='') as interval_log:
-                employee_writer = csv.writer(interval_log)
-                employee_writer.writerows(collection)
-                saveCurrentIntervals(interval_log)
 
 
-    return ''
-def updateDataAfterReview(a,b,c):
-    updateData()
-def updateDataAfterReview2(a):
-    updateData()
 
-def saveCurrentIntervals(interval_log):
-    import csv
-    from datetime import date
+  
 
-
-    employee_writer = csv.writer(interval_log)
-    interval, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 0 AND ivl <= 3;
+def getNumberOfCards():
+    return mw.col.db.execute(""" SELECT COUNT(id) FROM cards """)
+def getDataFor7Days():
+    return mw.col.db.execute("""
+    SELECT * FROM (
+        SELECT *
+        FROM betterProgress
+        ORDER BY day DESC
+        LIMIT 8
+    )
+    ORDER BY day ASC
     """)
-    interval1, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 3 AND ivl <= 7;
+def getDataFor90Days():
+        return mw.col.db.execute("""
+    SELECT * FROM (
+        SELECT *
+        FROM betterProgress
+        ORDER BY day DESC
+        LIMIT 91
+    )
+    ORDER BY day ASC
     """)
-    interval2, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 7 AND ivl <= 15;
+def getDataFor365Days():
+        return mw.col.db.execute("""
+    SELECT * FROM (
+        SELECT *
+        FROM betterProgress
+        ORDER BY day DESC
+        LIMIT 366
+    )
+    ORDER BY day ASC
     """)
-    interval3, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 15 AND ivl <= 30;
-    """)
-    interval4, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 30 AND ivl <= 60;
-    """)
-    interval5, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 60 AND ivl <= 120;
-    """)
-    interval6, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl > 120;
-    """)
-    leftover, = mw.col.db.first("""
-    SELECT count(*) FROM cards WHERE ivl <= 0;
-    """)
-    date = date.today()
 
-    employee_writer.writerow([
-        str(interval),
-        str(interval1),
-        str(interval2),
-        str(interval3),
-        str(interval4),
-        str(interval5),
-        str(interval6),
-        str(leftover),
-        date])
+def generateData(numberOfDaysToGenerate):
+    import time
 
-gui_hooks.reviewer_did_answer_card.append(updateDataAfterReview)
-gui_hooks.review_did_undo.append(updateDataAfterReview2)
+    currentTimeInMS = round(time.time()*1000)
+    for i in range(-1, int(numberOfDaysToGenerate)-1):
+        dateForStats = date.today() - timedelta(days=i)
+        dayInMS = unix_time_millis(datetime.datetime.combine(dateForStats, datetime.datetime.min.time()))
+        if(i == 3):
+
+            currentTimeInMS2 = round(time.time()*1000)
+
+
+            DurationOf4Loops = ((currentTimeInMS2 - currentTimeInMS)/60000)*(numberOfDaysToGenerate/4)
+            showDialog(DurationOf4Loops)
+        saveIntervals(dayInMS)
+        print(str(i) + ' generated')
+
+def getDataForAllDays():
+    tomorrowDate = date.today() - timedelta(days=-1)
+    tomorrowDateInMS = unix_time_millis(datetime.datetime.combine(tomorrowDate, datetime.datetime.min.time()))
+
+    firstReviewDate = mw.col.db.execute(""" 
+    SELECT MIN(id) FROM revlog
+    """)
+    
+    daysSinceFirstReview = (tomorrowDateInMS - firstReviewDate[0][0]) / 86400000 
+
+    return mw.col.db.execute("""
+    SELECT * FROM (
+        SELECT *
+        FROM betterProgress
+        ORDER BY day DESC
+        LIMIT """ + 
+        str(int(daysSinceFirstReview))
+        + """
+    )
+    ORDER BY day ASC
+    """)
+def replaceLastEntry(day):
+    mw.col.db.execute("""
+        DELETE FROM betterProgress
+        WHERE day in
+        (
+        SELECT day FROM betterProgress ORDER BY day DESC LIMIT 1
+        )
+    """)
+    
+
+
+
+    saveIntervals(day)
+
+
+
+def saveIntervals(day):
+    
+    mw.col.db.execute(""" 
+        INSERT INTO betterProgress
+        SELECT * FROM (
+        (SELECT """ + str(day) + """)day,
+        (
+        SELECT COUNT(id) FROM (
+            SELECT 
+                ROW_NUMBER () OVER ( 
+                PARTITION BY cid
+                ORDER BY id DESC
+                        ) rownum, id, cid, ivl
+            FROM (
+                SELECT * FROM (
+                    SELECT id, cid, ivl FROM revlog
+                )
+                WHERE id < """ + str(day) + """
+            )
+        )
+        Where rownum = 1 AND ivl > 0 AND ivl <= 3 
+        ) interval7,
+        (
+        SELECT COUNT(id) FROM (
+            SELECT 
+                ROW_NUMBER () OVER ( 
+                PARTITION BY cid
+                ORDER BY id DESC
+                        ) rownum, id, cid, ivl
+            FROM (
+                SELECT * FROM (
+                    SELECT id, cid, ivl FROM revlog
+                )
+                WHERE id < """ + str(day) + """
+            )
+        )
+        Where rownum = 1 AND ivl > 3 AND ivl <= 7 
+        ) interval6,
+        (
+        SELECT COUNT(id) FROM (
+            SELECT 
+                ROW_NUMBER () OVER ( 
+                PARTITION BY cid
+                ORDER BY id DESC
+                        ) rownum, id, cid, ivl
+            FROM (
+                SELECT * FROM (
+                    SELECT id, cid, ivl FROM revlog
+                )
+                WHERE id < """ + str(day) + """
+            )
+        )
+        Where rownum = 1 AND ivl > 7 AND ivl <= 15 
+        ) interval5,
+        (
+        SELECT COUNT(id) FROM (
+            SELECT 
+                ROW_NUMBER () OVER ( 
+                PARTITION BY cid
+                ORDER BY id DESC
+                        ) rownum, id, cid, ivl
+            FROM (
+                SELECT * FROM (
+                    SELECT id, cid, ivl FROM revlog
+                )
+                WHERE id < """ + str(day) + """
+            )
+        )
+        Where rownum = 1 AND ivl > 15 AND ivl <= 30 
+        ) interval4,
+        (
+        SELECT COUNT(id) FROM (
+            SELECT 
+                ROW_NUMBER () OVER ( 
+                PARTITION BY cid
+                ORDER BY id DESC
+                        ) rownum, id, cid, ivl
+            FROM (
+                SELECT * FROM (
+                    SELECT id, cid, ivl FROM revlog
+                )
+                WHERE id < """ + str(day) + """
+            )
+        )
+        Where rownum = 1 AND ivl > 30 AND ivl <= 60 
+        ) interval3,
+        (
+        SELECT COUNT(id) FROM (
+            SELECT 
+                ROW_NUMBER () OVER ( 
+                PARTITION BY cid
+                ORDER BY id DESC
+                        ) rownum, id, cid, ivl
+            FROM (
+                SELECT * FROM (
+                    SELECT id, cid, ivl FROM revlog
+                )
+                WHERE id < """ + str(day) + """
+            )
+        )
+        Where rownum = 1 AND ivl > 60 AND ivl <= 120 
+        ) interval2,
+        (
+        SELECT COUNT(id) FROM (
+            SELECT 
+                ROW_NUMBER () OVER ( 
+                PARTITION BY cid
+                ORDER BY id DESC
+                        ) rownum, id, cid, ivl
+            FROM (
+                SELECT * FROM (
+                    SELECT id, cid, ivl FROM revlog
+                )
+                WHERE id < """ + str(day) + """
+            )
+        )
+        Where rownum = 1 AND ivl > 120 
+        )interval1 );
+    """ )
+    
+
+import datetime
+
+epoch = datetime.datetime.utcfromtimestamp(0)
+def unix_time_millis(dt):
+    return (dt - epoch).total_seconds() * 1000.0
+
+
+
 gui_hooks.webview_did_inject_style_into_page.append(myfunc2)
+from PyQt5.QtCore import QThread, pyqtSignal, QObject, pyqtSlot
+from PyQt5.QtWidgets import QApplication, QPushButton, QWidget, QHBoxLayout, QProgressBar, QVBoxLayout
+class PopUpProgressB(QWidget):
 
+    def __init__(self):
+        super().__init__()
+        self.pbar = QProgressBar(self)
+        self.pbar.setGeometry(30, 40, 500, 75)
+        self.layout = QVBoxLayout()
+        self.layout.addWidget(self.pbar)
+        self.setLayout(self.layout)
+        self.setGeometry(300, 300, 550, 100)
+        self.setWindowTitle('Progress Bar')
+        self.show()
+
+
+    def on_count_changed(self, value):
+        self.pbar.setValue(value)
+
+def showDialog(minutes):
+    msgBox = QMessageBox()
+    msgBox.setIcon(QMessageBox.Information)
+    msgBox.setText("Review Data is being generated. This will take pproximately " + str(round(minutes, 2)) + " minutes")
+    msgBox.setWindowTitle("QMessageBox Example")
+    msgBox.setStandardButtons(QMessageBox.Cancel)
+
+
+
+    msgBox.exec()
+
+  
 
