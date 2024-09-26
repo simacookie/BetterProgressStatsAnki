@@ -61,12 +61,13 @@ def myfunc2(web: AnkiWebView):
     print('lastTimeStamp:' + str(lastTimestampInBetterProgress[0][0]))
     print('nextTimeStamp:' + str(getNextTimestamp()))
     print('isEqual:' + str(lastTimestampInBetterProgress[0][0] == getNextTimestamp()))
-
+   
     if(lastTimestampInBetterProgress[0][0] is None):
         showDialog(23)
         progressBar = PopUpProgressB()
         numberOfDaysToUpdate = daysSinceFirstReview + 1
     elif(lastTimestampInBetterProgress[0][0] != getNextTimestamp()):
+        progressBar = PopUpProgressB()
         numberOfDaysToUpdate = (getNextTimestamp() - lastTimestampInBetterProgress[0][0]) / 86400000 
     elif(lastTimestampInBetterProgress[0][0] == getNextTimestamp()):
         replace = 1
@@ -686,6 +687,7 @@ def unix_time_millis(dt):
 
 
 gui_hooks.webview_did_inject_style_into_page.append(myfunc2)
+
 from aqt.qt import QWidget, QProgressBar, QVBoxLayout
 class PopUpProgressB(QWidget):
 
