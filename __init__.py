@@ -23,8 +23,7 @@ def myfunc2(web: AnkiWebView):
     global webView
     webView = web
     page = os.path.basename(web.page().url().path())
-    #TODO fit to changing rollover
-    if page != "graphs.html":
+    if "graphs" not in page:
         return
     mw.col.db.execute("""
     CREATE TABLE IF NOT EXISTS betterProgress (
@@ -57,11 +56,7 @@ def myfunc2(web: AnkiWebView):
     daysSinceFirstReviewTimestamp = datetime.datetime.today() - firstReviewDate; 
     global daysSinceFirstReview
     daysSinceFirstReview = daysSinceFirstReviewTimestamp.days
-    
-    print('lastTimeStamp:' + str(lastTimestampInBetterProgress[0][0]))
-    print('nextTimeStamp:' + str(getNextTimestamp()))
-    print('isEqual:' + str(lastTimestampInBetterProgress[0][0] == getNextTimestamp()))
-   
+       
     if(lastTimestampInBetterProgress[0][0] is None):
         showDialog(23)
         progressBar = PopUpProgressB()
@@ -73,14 +68,12 @@ def myfunc2(web: AnkiWebView):
         replace = 1
     isDataGenerated = True
     if(load):
-        print('numberOfDaysToUpdate:' + str(numberOfDaysToUpdate))
         rollover = mw.col.get_preferences().scheduling.rollover
         if(replace == 0):
             isDataGenerated = False
             generateDataWithProgress(numberOfDaysToUpdate, progressBar)
         else:
             updateLastEntry()  
-        print('isloaded =' + str(isDataGenerated))
         if(isDataGenerated): LoadGraph(web)
 def LoadGraph(web: AnkiWebView):                 
     progressToday = getProgressForToday()
@@ -577,9 +570,6 @@ def generateData(numberOfDaysToGenerate, progressBarWindow)-> CollectionOp[OpCha
 
     rollover = mw.col.get_preferences().scheduling.rollover
     startDay = -1
-    print('currenttimeastimestamp:' + str(getCurrentTimeAsTimestamp()))
-    print('TodaysTimestamp:' + str(getTodaysTimestamp()))
-    print('numberOfDaysToGenerate:' + str(numberOfDaysToGenerate))
     if(getCurrentTimeAsTimestamp() < getTodaysTimestamp()): startDay = 0
     for i in range(startDay, int(numberOfDaysToGenerate)):
         dateForStats = date.today() - timedelta(days=i)
@@ -588,7 +578,6 @@ def generateData(numberOfDaysToGenerate, progressBarWindow)-> CollectionOp[OpCha
         if(i != int(numberOfDaysToGenerate)): aqt.mw.taskman.run_on_main(
             lambda: progressBarWindow.on_count_changed(i)
     )
-    print(str(i) + ' generated day:' + str(dayInMS) + ' dateForStats' + str(dateForStats) + ' ' + str(i))
     #aqt.mw.taskman.run_on_main(
             #lambda: LoadGraph(web))
     
